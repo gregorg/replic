@@ -308,7 +308,7 @@ class ReplicServer():
 		for k in ('host', 'user', 'password'):
 			try:
 				getattr(self, "set%s" % k.capitalize())(cfp.get('mysql', k))
-			except ConfigParser.NoOptionError: pass
+			except (ConfigParser.NoOptionError, ConfigParser.NoSectionError): pass
 
 
 	def setHost(self, host):
