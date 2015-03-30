@@ -296,6 +296,8 @@ class ReplicServer():
 		self.parseMyCnf()
 		if host is not None:
 			self.setHost(host)
+		else:
+			self.setHost('localhost')
 
 
 	def setConfident(self, flag=False):
