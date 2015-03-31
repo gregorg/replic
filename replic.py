@@ -115,14 +115,6 @@ def setup_logging(debug_level=None, threadless=False, logfile=None, rotate=False
 
 # }}}
 
-def set_proc_name(new_name): # {{{
-	try:
-		import prctl
-		prctl.set_proctitle(new_name)
-		prctl.set_name(new_name)
-	except:
-		logging.warning("Unable to set proc name %s:"%new_name, exc_info=True)
-
 # }}}
 
 class ColoredFormatter(logging.Formatter): # {{{
@@ -559,8 +551,16 @@ class ReplicServer():
 					nagios_status = NAGIOSSTATUSES['CRITICAL']
 					nagios_msg = "[%s] %s" % (self.slave.getStatus('Last_SQL_Errno'), self.slave.getStatus('Last_SQL_Error'))
 		except mdb.InterfaceError:
+			# Check if this is a DRBD secondary node
 			nagios_status = NAGIOSSTATUSES['CRITICAL']
 			nagios_msg = 'Connection refused'
+			try:
+				drbd = open('/proc/drbd', 'r')
+				for line in drbd:
+					if 'ro:Secondary/' in line:
+						nagios_status = NAGIOSSTATUSES['UNKNOWN']
+						nagios_msg = 'DRBD secondary node'
+			except IOError: pass
 			
 				
 		# output for nagios check:
@@ -893,7 +893,6 @@ if __name__ == '__main__':
 		elif o in ("--switch",):
 			actions.append("switch")
 	
-	set_proc_name('replic')
 	try:
 		exitcode = 0
 		for action in actions:
