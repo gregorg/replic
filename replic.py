@@ -271,6 +271,7 @@ class ReplicSlave():
 class ReplicServer():
 	DEFAULT_USER = 'root'
 	DEFAULT_PWD = ''
+	DEFAULT_TIMEOUT = 3
 
 	def __init__(self, host=None):
 		self.host = None
@@ -284,6 +285,7 @@ class ReplicServer():
 		self.slave = None
 
 		self.gtid_domain = None
+		self.connect_timeout = self.DEFAULT_TIMEOUT
 
 		self.parseMyCnf()
 		if host is not None:
@@ -291,6 +293,9 @@ class ReplicServer():
 		else:
 			self.setHost('localhost')
 
+
+	def setTimeout(self, t):
+		self.connect_timeout = t
 
 	def setConfident(self, flag=False):
 		self.confident = bool(flag)
@@ -337,7 +342,7 @@ class ReplicServer():
 			user=self.user,
 			password=self.password,
 			database='mysql',
-			connection_timeout=3,
+			connection_timeout=self.connect_timeout,
 			autocommit=True
 		)
 
@@ -509,6 +514,9 @@ class ReplicServer():
 				nagios_msg = "MASTER"
 			
 			if self.isSlave():
+				if nagios_msg:
+					nagios_msg += ", "
+
 				# both SQL and IO are running :
 				if self.slave.isIoRunning() and self.slave.isSqlRunning():
 					sbm = self.slave.getBehindMaster()
@@ -526,8 +534,6 @@ class ReplicServer():
 							nagios_status = NAGIOSSTATUSES['CRITICAL']
 
 					# default message if not overridden
-					if nagios_msg:
-						nagios_msg += ", "
 					nagios_msg += "%d behind master" % sbm
 
 				elif self.slave.isBackupRunning():
@@ -592,6 +598,7 @@ def do_check(rs, args):
 
 
 def do_switch(newmaster, args):
+	newmaster.setTimeout(30)
 	newmaster.fetchInfos()
 	if not newmaster.isSlave():
 		logging.critical("'%s' is not a slave, can't switch.", newmaster.host)
