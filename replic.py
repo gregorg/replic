@@ -626,7 +626,7 @@ def do_switch(newmaster, args):
 		master_config = current_master.getMasterConfig()
 		if current_master.slave is not None \
 			and current_master.slave.isRunning() \
-			and newmaster.slave.getStatus('Master_Host') == current_master.host:
+			and current_master.slave.getStatus('Master_Host') == newmaster.host:
 			logging.critical("%s is already master for %s ...", newmaster.host, current_master.host)
 			return 8
 	else:
@@ -835,6 +835,9 @@ def do_switch(newmaster, args):
 			current_master.getSlaveInfos()
 			logging.info("Old master has now %d seconds of delay.", current_master.slave.getBehindMaster())
 			#current_master.execQuery("RESET MASTER") # ??? only if everything is ok ...
+		logging.debug("Disable sync_binlog on old master")
+		current_master.execQuery("SET GLOBAL sync_binlog=0")
+
 	else:
 		logging.critical("Something is wrong with old master (%s)", current_master.host)
 
