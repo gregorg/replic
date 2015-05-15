@@ -55,7 +55,7 @@ def Usage(): # {{{
 	                      optionnal arg <slaves> is a slaves list separated by comma
 						  which are added to the slaves automatically fetched from master.
 						  MANDATORY is master is down.
-	-- confident        : do not warn before to proceed
+	--confident         : do not warn before to proceed
 
 == EXAMPLES ==
 
@@ -173,6 +173,7 @@ class ReplicSlave():
 	def __init__(self, host):
 		self.host = host
 		self.sss = None
+		self.name = ''
 	
 	# Last_Error
 	# Until_Log_File
@@ -198,6 +199,14 @@ class ReplicSlave():
 	def setStatus(self, sss):
 		self.sss = sss
 		return True
+
+	
+	def setName(self, name):
+		self.name = name
+
+	
+	def getName(self):
+		return self.name
 
 	
 	def getShortStatus(self,):
@@ -283,7 +292,9 @@ class ReplicServer():
 
 		self.master = None
 		self.slave = None
+		self.slaves = {}
 
+		self.has_multi_source_support = None
 		self.gtid_domain = None
 		self.connect_timeout = self.DEFAULT_TIMEOUT
 
@@ -366,6 +377,34 @@ class ReplicServer():
 	def fetchInfos(self,):
 		self.getMasterInfos()
 		self.getSlaveInfos()
+	
+
+	def hasMultiSourceSupport(self):
+		if self.has_multi_source_support is None:
+			self.connect()
+			try:
+				cursor = self.query("SET @@default_master_connection=''")
+				cursor.close()
+				self.has_multi_source_support = True
+			except mdb.DatabaseError:
+				self.has_multi_source_support = False
+		return self.has_multi_source_support
+		
+
+	def getAllSlavesInfos(self):
+		self.connect()
+		cursor = self.query("SHOW ALL SLAVES STATUS", self.mdb.cursor(dictionary=True))
+		for row in cursor:
+			self.slaves[row['Connection_name']] = {}
+		
+		for slave in sorted(self.slaves.keys(), reverse=True):
+			logging.debug("Check slave '%s'", slave)
+			self.query("SET @@default_master_connection='%s'"%slave).close()
+			self.getSlaveInfos()
+			self.slaves[slave] = self.slave
+			self.slaves[slave].setName(slave)
+
+		return True
 
 
 	def getMasterInfos(self,):
@@ -389,19 +428,21 @@ class ReplicServer():
 	def getSlaveInfos(self, retry=True):
 		self.connect()
 		cursor = self.query("SHOW SLAVE STATUS", self.mdb.cursor(dictionary=True))
+		slave = None
 		for row in cursor:
 			# if not yet connected, retry in 1s :
 			if retry and row['Slave_IO_Running'] == 'No':
 				cursor.close()
 				time.sleep(1)
-				return self.getSlaveInfos(False)
+				return self.getSlaveInfos, _return(False)
 
-			self.slave = ReplicSlave(self.host)
-			if self.slave.setStatus(row):
+			slave = ReplicSlave(self.host)
+			if slave.setStatus(row):
 				logging.debug("%s is a slave", self.host)
 			else:
-				self.slave = None
+				slave = None
 		cursor.close()
+		self.slave = slave
 
 
 	def isMaster(self,):
@@ -517,45 +558,58 @@ class ReplicServer():
 				if nagios_msg:
 					nagios_msg += ", "
 
-				# both SQL and IO are running :
-				if self.slave.isIoRunning() and self.slave.isSqlRunning():
-					sbm = self.slave.getBehindMaster()
-					logging.debug("Seconds_Behind_Master=%s Warning=%d Critical=%d", sbm, warning_threshold, critical_threshold)
-					if sbm < warning_threshold:
-						self.slave.removeBackupFlag()
-						nagios_status = NAGIOSSTATUSES['OK']
-					elif sbm < critical_threshold:
-						nagios_status = NAGIOSSTATUSES['WARNING']
-					elif sbm >= critical_threshold:
-						if self.slave.isBackupflagPresent():
-							nagios_status = NAGIOSSTATUSES['WARNING']
-							nagios_msg = 'Backup is catching-up'
-						else:
-							nagios_status = NAGIOSSTATUSES['CRITICAL']
-
-					# default message if not overridden
-					nagios_msg += "%d behind master" % sbm
-
-				elif self.slave.isBackupRunning():
-					nagios_status = NAGIOSSTATUSES['UNKNOWN']
-					nagios_msg += 'Backup in progress'
-
-				elif not self.slave.isIoRunning() and self.slave.isSqlRunning():
-					nagios_status = NAGIOSSTATUSES['WARNING']
-					nagios_msg += 'I/O slave stopped'
-
-				elif self.slave.isIoRunning() and not self.slave.isSqlRunning():
-					if self.slave.getStatus('Last_Errno'):
-						nagios_status = NAGIOSSTATUSES['CRITICAL']
-						nagios_msg = "[%s] %s" % (self.slave.getStatus('Last_Errno'), self.slave.getStatus('Last_Error'))
-					else:
-						nagios_status = NAGIOSSTATUSES['WARNING']
-					nagios_msg += 'SQL slave stopped'
-						
-
+				if self.hasMultiSourceSupport():
+					self.getAllSlavesInfos()
 				else:
-					nagios_status = NAGIOSSTATUSES['CRITICAL']
-					nagios_msg = "[%s] %s" % (self.slave.getStatus('Last_SQL_Errno'), self.slave.getStatus('Last_SQL_Error'))
+					self.slaves[''] = self.slave
+
+				for slave in self.slaves.values():
+					slave_nagios_status = nagios_status
+					slave_nagios_msg = nagios_msg
+					# both SQL and IO are running :
+					if slave.isIoRunning() and slave.isSqlRunning():
+						sbm = slave.getBehindMaster()
+						logging.debug("Seconds_Behind_Master=%s Warning=%d Critical=%d", sbm, warning_threshold, critical_threshold)
+						if sbm < warning_threshold:
+							slave.removeBackupFlag()
+							slave_nagios_status = NAGIOSSTATUSES['OK']
+						elif sbm < critical_threshold:
+							slave_nagios_status = NAGIOSSTATUSES['WARNING']
+						elif sbm >= critical_threshold:
+							if slave.isBackupflagPresent():
+								slave_nagios_status = NAGIOSSTATUSES['WARNING']
+								slave_nagios_msg = 'Backup is catching-up'
+							else:
+								slave_nagios_status = NAGIOSSTATUSES['CRITICAL']
+
+						# default message if not overridden
+						slave_nagios_msg += "'%s' %d behind master" % (slave.getName(), sbm)
+
+					elif slave.isBackupRunning():
+						slave_nagios_status = NAGIOSSTATUSES['UNKNOWN']
+						slave_nagios_msg += 'Backup in progress'
+
+					elif not slave.isIoRunning() and slave.isSqlRunning():
+						slave_nagios_status = NAGIOSSTATUSES['WARNING']
+						slave_nagios_msg += 'I/O slave stopped'
+
+					elif slave.isIoRunning() and not slave.isSqlRunning():
+						if slave.getStatus('Last_Errno'):
+							slave_nagios_status = NAGIOSSTATUSES['CRITICAL']
+							slave_nagios_msg = "[%s] %s" % (slave.getStatus('Last_Errno'), slave.getStatus('Last_Error'))
+						else:
+							slave_nagios_status = NAGIOSSTATUSES['WARNING']
+						slave_nagios_msg += 'SQL slave stopped'
+							
+
+					else:
+						nagios_status = NAGIOSSTATUSES['CRITICAL']
+						slave_nagios_msg = "[%s] %s" % (slave.getStatus('Last_SQL_Errno'), slave.getStatus('Last_SQL_Error'))
+					
+					if slave_nagios_status > nagios_status:
+						nagios_status = slave_nagios_status
+						nagios_msg = slave_nagios_msg
+
 		except mdb.InterfaceError:
 			# Check if this is a DRBD secondary node
 			nagios_status = NAGIOSSTATUSES['CRITICAL']
