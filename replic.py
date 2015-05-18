@@ -208,6 +208,13 @@ class ReplicSlave():
 	def getName(self):
 		return self.name
 
+
+	def getPrettyName(self):
+		if self.name == '':
+			return 'main'
+		else:
+			return self.name
+
 	
 	def getShortStatus(self,):
 		if self.sss is None:
@@ -563,6 +570,7 @@ class ReplicServer():
 				else:
 					self.slaves[''] = self.slave
 
+				slave_nagios_set = False
 				for slave in self.slaves.values():
 					slave_nagios_status = nagios_status
 					slave_nagios_msg = nagios_msg
@@ -583,7 +591,7 @@ class ReplicServer():
 								slave_nagios_status = NAGIOSSTATUSES['CRITICAL']
 
 						# default message if not overridden
-						slave_nagios_msg += "'%s' %d behind master" % (slave.getName(), sbm)
+						slave_nagios_msg += "'%s' %d behind master" % (slave.getPrettyName(), sbm)
 
 					elif slave.isBackupRunning():
 						slave_nagios_status = NAGIOSSTATUSES['UNKNOWN']
@@ -606,9 +614,10 @@ class ReplicServer():
 						nagios_status = NAGIOSSTATUSES['CRITICAL']
 						slave_nagios_msg = "[%s] %s" % (slave.getStatus('Last_SQL_Errno'), slave.getStatus('Last_SQL_Error'))
 					
-					if slave_nagios_status > nagios_status:
+					if not slave_nagios_set or slave_nagios_status > nagios_status:
 						nagios_status = slave_nagios_status
 						nagios_msg = slave_nagios_msg
+						slave_nagios_set = True
 
 		except mdb.InterfaceError:
 			# Check if this is a DRBD secondary node
