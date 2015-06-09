@@ -441,7 +441,7 @@ class ReplicServer():
 			if retry and row['Slave_IO_Running'] == 'No':
 				cursor.close()
 				time.sleep(1)
-				return self.getSlaveInfos, _return(False)
+				return self.getSlaveInfos(retry=False)
 
 			slave = ReplicSlave(self.host)
 			if slave.setStatus(row):
