@@ -1,18 +1,17 @@
 # replic
 
-MariaDB replication checks and master switch
+MariaDB replication checks, and master-slaves switchover.
 
 # Dependencies
 
-You must install 2 pip modules:
+You must install some pip modules:
 ```
-pip install --user termcolor
-pip install --user mysql-connector-python
+pip install --user -r requirements.txt
 ```
 
 # check mode
 
-Used for Nagios checks. It will check both master and slave.
+Used for Nagios checks. It will check both master and slave statuses.
 
 ```
 replic.py --check
@@ -26,12 +25,16 @@ replic.py --host server_name --check
 
 # switch mode
 
-Used to switch from a MariaDB master to another. If old master is still reachable, it will transform it to a slave.
+Used to switch from a MariaDB master to another. If old master is still reachable, it will be transformed to a slave.
 
 - first it will do some sanity checks, like that the new master has binary logs activated
 - then, if old master is still alive, it will guess slaves. If not, you have to specify slaves on command line:
 ```
 replic.py --host new_master --switch slave1,slave2,slave3
+```
+- a dry-run option is available to see what the script will do
+```
+replic.py --host new_master --switch slave1,slave2,slave3 --dry-run
 ```
 - if everything is fine, it will proceed to the switch
 - disable writes on old master
