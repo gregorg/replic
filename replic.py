@@ -708,7 +708,13 @@ def do_switch(newmaster, args):
 			remove_list.append(slave)
 			continue
 
-		slave_master = slave.slave.getStatus('Master_Host')
+                try:
+        		slave_master = slave.slave.getStatus('Master_Host')
+                except AttributeError:
+			logging.warning("%s is not a slave", slave.host)
+			remove_list.append(slave)
+			continue
+
 		# Exclude slaves that are not in the pool
 		if slave_master != current_master.host:
 			logging.warning("%s is not a slave from %s but from %s", slave.host, current_master.host, slave_master)
@@ -868,7 +874,7 @@ def do_switch(newmaster, args):
 		slave.execQuery("START SLAVE")
 	
 	# check replication status
-	#time.sleep(1) # let connection beeing established...
+	time.sleep(1) # let connection beeing established...
 	for slave in slaves:
 		slave.getSlaveInfos()
 		if slave.slave.isRunning() and slave.slave.getStatus('Master_Host') == newmaster.host:
