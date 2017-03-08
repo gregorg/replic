@@ -42,7 +42,7 @@ def Usage(): # {{{
 
 == GENERAL OPTIONS ==
 	--debug				: debug
-	--dry-un			: dry-run, don't really do anything
+	--dry-run			: dry-run, don't really do anything
 	--host HOST     	: hostname. Default: unix socket
 
 == CHECK ==
