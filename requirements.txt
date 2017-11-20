@@ -1,2 +1,3 @@
 termcolor
 mysql-connector-python
+ConfigParser
