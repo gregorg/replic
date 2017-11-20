@@ -6,7 +6,7 @@ MariaDB replication checks, and master-slaves switchover.
 
 You must install some pip modules:
 ```
-pip install --user -r requirements.txt
+pip3 install --user -r requirements.txt
 ```
 
 # check mode
