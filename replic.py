@@ -893,6 +893,7 @@ def do_switch(newmaster, args):
     current_master.execQuery("STOP SLAVE")
     current_master.execQuery("CHANGE MASTER TO MASTER_HOST='%s', MASTER_USER='%s', MASTER_LOG_FILE='%s', MASTER_LOG_POS=%d"%(newmaster.host, master_user, newmaster_pos[0], newmaster_pos[1]))
     current_master.execQuery("START SLAVE")
+    time.sleep(2)
     current_master.getSlaveInfos()
     if current_master.isSlave():
         if current_master.slave.isRunning(): # and newmaster.hasGtid():

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: iso-8859-1 -*-
 # vim: ai ts=4 sts=4 et sw=4
 from setuptools import setup
