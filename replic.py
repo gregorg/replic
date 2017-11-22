@@ -700,6 +700,8 @@ def do_switch(newmaster, args):
 
     # fetch infos and filter
     remove_list = []
+    slaves_with_vip = []
+    master_vip = None
     for slave in slaves:
         logging.debug("fetch %s", slave.host)
         try:
@@ -718,8 +720,16 @@ def do_switch(newmaster, args):
 
         # Exclude slaves that are not in the pool
         if slave_master != current_master.host:
-            logging.warning("%s is not a slave from %s but from %s", slave.host, current_master.host, slave_master)
-            remove_list.append(slave)
+            if 'vip' in slave_master:
+                if master_vip is None or master_vip == slave_master:
+                    logging.warning("%s is a slave from VIP %s", slave.host, slave_master)
+                    slaves_with_vip.append(slave)
+                elif master_vip is not None and master_vip != slave_master:
+                    logging.warning("%s is not a slave from %s but from %s", slave.host, current_master.host, slave_master)
+                    remove_list.append(slave)
+            else:
+                logging.warning("%s is not a slave from %s but from %s", slave.host, current_master.host, slave_master)
+                remove_list.append(slave)
             continue
 
         if newmaster.host == slave.host:
@@ -868,10 +878,14 @@ def do_switch(newmaster, args):
     for slave in slaves:
         slave.execQuery("STOP SLAVE")
         if slave.hasGtid():
-            slave.execQuery("SET GLOBAL gtid_domain_id=%d" % gtid_domain)
-            slave.execQuery("CHANGE MASTER TO MASTER_HOST='%s', MASTER_USER='%s'"%(newmaster.host, master_user))
+            #slave.execQuery("SET GLOBAL gtid_domain_id=%d" % gtid_domain)
+            if slave not in slaves_with_vip:
+                slave.execQuery("CHANGE MASTER TO MASTER_HOST='%s', MASTER_USER='%s'"%(newmaster.host, master_user))
         else:
-            slave.execQuery("CHANGE MASTER TO MASTER_HOST='%s', MASTER_USER='%s', MASTER_LOG_FILE='%s', MASTER_LOG_POS=%d"%(newmaster.host, master_user, newmaster_pos[0], newmaster_pos[1]))
+            if slave not in slaves_with_vip:
+                slave.execQuery("CHANGE MASTER TO MASTER_LOG_FILE='%s', MASTER_LOG_POS=%d"%(newmaster_pos[0], newmaster_pos[1]))
+            else:
+                slave.execQuery("CHANGE MASTER TO MASTER_HOST='%s', MASTER_USER='%s', MASTER_LOG_FILE='%s', MASTER_LOG_POS=%d"%(newmaster.host, master_user, newmaster_pos[0], newmaster_pos[1]))
         slave.execQuery("START SLAVE")
     
     # check replication status
@@ -920,6 +934,7 @@ def do_switch(newmaster, args):
     phase += 1
     logging.info("Phase %d : reset slave on new master.", phase)
     newmaster.execQuery("RESET SLAVE ALL")
+    logging.warning("If everything is OK, exec this query on old master %s : 'RESET MASTER'", current_master.host)
 
     return 0
 
