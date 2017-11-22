@@ -912,9 +912,15 @@ def do_switch(newmaster, args):
     if current_master.isSlave():
         if current_master.slave.isRunning(): # and newmaster.hasGtid():
             try:
-                logging.info("Switch old master to GTID")
+                logging.info("Switch old master to GTID current_pos")
                 current_master.execQuery("STOP SLAVE")
-                current_master.execQuery("CHANGE MASTER TO MASTER_USE_GTID=slave_pos")
+                current_master.execQuery("CHANGE MASTER TO MASTER_USE_GTID=current_pos")
+                time.sleep(2)
+                if current_master.slave.isRunning():
+                    current_master.execQuery("STOP SLAVE")
+                    current_master.getSlaveInfos()
+                    if current_master.slave.isRunning():
+                        current_master.execQuery("CHANGE MASTER TO MASTER_USE_GTID=slave_pos")
             finally:
                 current_master.execQuery("START SLAVE")
             current_master.getSlaveInfos()
