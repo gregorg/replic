@@ -315,6 +315,7 @@ class ReplicServer():
 
     def close(self):
         if self.mdb is not None:
+            self.mdb.disconnect()
             self.mdb.shutdown()
 
 
