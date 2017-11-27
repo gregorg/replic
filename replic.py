@@ -313,6 +313,11 @@ class ReplicServer():
             self.setHost('localhost')
 
 
+    def close(self):
+        if self.mdb is not None:
+            self.mdb.shutdown()
+
+
     def setTimeout(self, t):
         self.connect_timeout = t
 
@@ -635,6 +640,7 @@ class ReplicServer():
                 
         # output for nagios check:
         print(nagios_msg)
+        self.close()
         return nagios_status
 # }}}        
 
@@ -942,6 +948,9 @@ def do_switch(newmaster, args):
     newmaster.execQuery("RESET SLAVE ALL")
     logging.warning("If everything is OK, exec this query on old master %s : 'RESET MASTER'", current_master.host)
 
+    for srv in slaves + [current_master, newmaster]:
+        srv.close()
+
     return 0
 
 
@@ -1011,6 +1020,7 @@ if __name__ == '__main__':
         logging.critical("Fatal error :", exc_info=True)
         exitcode = 3
     
+    replic_server.close()
     sys.exit(exitcode)
 
 
