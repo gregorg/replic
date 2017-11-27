@@ -11,7 +11,7 @@ setup(
     author_email="skygreg@gmail.com",
     maintainer="Grégory Duchatelet",
     maintainer_email="skygreg@gmail.com",
-    install_requires=["termcolor","mysql.connector"],
+    install_requires=["termcolor","mysql.connector", "psutil"],
     description="MariaDB replication checks and master switch",
     url="https://github.com/gregorg/replic",
     packages=[],
