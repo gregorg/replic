@@ -249,6 +249,14 @@ class ReplicSlave():
         return BACKUP_FLAG + '.' + self.host
 
 
+    def isBackupRunningForTooLong(self,):
+        bflag = self.getBackupFlag()
+        if os.path.exists(bflag):
+            if time.time() - os.stat(bflag).st_mtime > 7200:
+                return True
+        return False
+
+
     def isBackupRunning(self,):
         logging.debug("Check if a backup is running")
         bflag = self.getBackupFlag()
@@ -599,6 +607,10 @@ class ReplicServer():
 
                         # default message if not overridden
                         slave_nagios_msg += "'%s' %ds behind master" % (slave.getPrettyName(), sbm)
+
+                    elif slave.isBackupRunningForTooLong():
+                        slave_nagios_status = NAGIOSSTATUSES['CRITICAL']
+                        slave_nagios_msg += 'Backup is stuck'
 
                     elif slave.isBackupRunning():
                         slave_nagios_status = NAGIOSSTATUSES['UNKNOWN']
