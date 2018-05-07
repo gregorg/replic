@@ -324,7 +324,9 @@ class ReplicServer():
     def close(self):
         if self.mdb is not None:
             self.mdb.disconnect()
-            self.mdb.shutdown()
+            try:
+                self.mdb.shutdown()
+            except AttributeError: pass
 
 
     def setTimeout(self, t):
@@ -362,7 +364,9 @@ class ReplicServer():
                 return
             except mdb.InterfaceError:
                 logging.debug("Connection to database is closed.")
-                self.mdb.shutdown()
+                try:
+                    self.mdb.shutdown()
+                except AttributeError: pass
                 self.mdb = None
 
         if '/' in self.host:
