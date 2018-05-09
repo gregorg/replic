@@ -198,7 +198,12 @@ class ReplicSlave():
     # Last_SQL_Errno
     # Using_Gtid
     def setStatus(self, sss):
-        self.sss = sss
+        self.sss = {}
+        for k in sss:
+            try:
+                self.sss[k.decode('UTF-8')] = sss[k]
+            except:
+                self.sss[k] = sss[k]
         return True
 
     
