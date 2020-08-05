@@ -162,7 +162,6 @@ class ReplicMaster():
         self.binlogfile = ''
         self.binlogpos = 0
         self.setMasterPos(binlogfile, binlogpos)
-
     
     def setMasterPos(self, binlog, pos):
         self.binlogfile = str(binlog)
@@ -317,6 +316,8 @@ class ReplicServer():
 
         self.has_multi_source_support = None
         self.gtid_domain = None
+        self.server_id = None
+        self.connection_name = None
         self.connect_timeout = self.DEFAULT_TIMEOUT
 
         self.parseMyCnf()
@@ -387,27 +388,42 @@ class ReplicServer():
             connection_timeout=self.connect_timeout,
             autocommit=True
         )
+        self.query("SET wait_timeout=3600")
 
 
-    def query(self, q, cursor=None):
+    def query(self, q, cursor=None, on_slave=True):
         if cursor is None:
             cursor = self.mdb.cursor()
+        if on_slave and self.has_multi_source_support and self.connection_name is not None:
+            logging.debug("%s (%s) : %s", self.host, self.connection_name, q)
+            cursor.execute("SET @@default_master_connection='%s'"%self.connection_name)
+        else:
+            logging.debug("%s : %s", self.host, q)
         cursor.execute(q)
         return cursor
 
     
     def execQuery(self, q):
-        logging.debug("%s : %s", self.host, q)
+        source = False
+        if self.has_multi_source_support and self.connection_name is not None:
+            source = True
+            logging.debug("%s (%s) : %s", self.host, self.connection_name, q)
+        else:
+            logging.debug("%s : %s", self.host, q)
         if DRYRUN:
             return False
         cursor = self.mdb.cursor()
+        if source:
+            cursor.execute("SET @@default_master_connection='%s'"%self.connection_name)
         cursor.execute(q)
         cursor.close()
     
 
-    def fetchInfos(self,):
+    def fetchInfos(self):
         self.getMasterInfos()
         self.getSlaveInfos()
+        if self.hasMultiSourceSupport():
+            self.getAllSlaves()
     
 
     def hasMultiSourceSupport(self):
@@ -421,22 +437,31 @@ class ReplicServer():
                 self.has_multi_source_support = False
         return self.has_multi_source_support
         
+    def hasMultiSources(self):
+        return len(self.slaves) > 1
 
-    def getAllSlavesInfos(self):
+    def getAllSlaves(self):
         self.connect()
         cursor = self.query("SHOW ALL SLAVES STATUS", self.mdb.cursor(dictionary=True))
         for row in cursor:
             self.slaves[row['Connection_name']] = {}
         
         for slave in sorted(self.slaves.keys(), reverse=True):
-            logging.debug("Check slave '%s'", slave)
-            self.query("SET @@default_master_connection='%s'"%slave).close()
+            logging.debug("Check slave with connection name '%s'", slave)
+            self.query("SET @@default_master_connection='%s'"%slave, on_slave=False).close()
             self.getSlaveInfos()
             self.slaves[slave] = self.slave
             self.slaves[slave].setName(slave)
-
         return True
 
+    def selectSource(self, with_master_id):
+        for slave in self.slaves:
+            if self.slaves[slave].getStatus('Master_Server_Id') == with_master_id:
+                self.slave = self.slaves[slave]
+                self.connection_name = slave
+                logging.info("%s selected replication source : '%s'", self.host, slave)
+                return True
+        return False
 
     def getMasterInfos(self,):
         self.connect()
@@ -469,7 +494,8 @@ class ReplicServer():
 
             slave = ReplicSlave(self.host)
             if slave.setStatus(row):
-                logging.debug("%s is a slave", self.host)
+                #logging.debug("%s is a slave", self.host)
+                pass
             else:
                 slave = None
         cursor.close()
@@ -530,7 +556,7 @@ class ReplicServer():
         cursor.close()
 
         for row in users:
-            gcursor = self.query("SHOW GRANTS FOR '%s'@'%s'"%(row[0].decode(), row[1].decode()))
+            gcursor = self.query("SHOW GRANTS FOR '%s'@'%s'"%(row[0], row[1]))
             for r in gcursor:
                 if r:
                     grants.append(r[0])
@@ -553,6 +579,33 @@ class ReplicServer():
             config[var] = self.getVariable(var)
         return config
 
+    def getServerId(self):
+        if self.server_id is None:
+            self.server_id = self.getVariable('server_id')
+        return self.server_id
+
+    def getPositionToCatch(self, gtid_domain):
+        self.getMasterInfos()
+        gtid_position_to_catch = self.getGtidPos(gtid_domain)
+        position_to_catch = self.getMasterPos()
+        return (gtid_position_to_catch, position_to_catch)
+
+    def waitReplication(self, gtid_domain, master_pos):
+        catched_up = False
+        self.getSlaveInfos()
+        if self.hasGtid():
+            gtid = self.getGtidPos(gtid_domain)
+            if gtid == master_pos[0]:
+                catched_up = True
+        else:
+            binlog = self.slave.getStatus('Master_Log_File')
+            exec_pos = self.slave.getStatus('Exec_Master_Log_Pos')
+            if (binlog, exec_pos) == master_pos[1]:
+                catched_up = True
+            
+        if catched_up:
+            logging.info("Slave '%s' catched-up.", self.host)
+        return catched_up
 
     def setConfig(self, conf):
         for var in conf.keys():
@@ -590,7 +643,7 @@ class ReplicServer():
                     nagios_msg += ", "
 
                 if self.hasMultiSourceSupport():
-                    self.getAllSlavesInfos()
+                    self.getAllSlaves()
                 else:
                     self.slaves[''] = self.slave
 
@@ -731,7 +784,6 @@ def do_switch(newmaster, args):
     slaves_with_vip = []
     master_vip = None
     for slave in slaves:
-        logging.debug("fetch %s", slave.host)
         try:
             slave.fetchInfos()
         except mdb.InterfaceError:
@@ -739,26 +791,36 @@ def do_switch(newmaster, args):
             remove_list.append(slave)
             continue
 
+        if slave.hasMultiSources():
+            slave.selectSource(current_master.getServerId())
+
         try:
             slave_master = slave.slave.getStatus('Master_Host')
         except AttributeError:
-            logging.warning("%s is not a slave", slave.host)
+            logging.warning("%s is not a slave", slave.host, exc_info=True)
             remove_list.append(slave)
             continue
 
         # Exclude slaves that are not in the pool
         if slave_master != current_master.host:
             if 'vip' in slave_master:
-                if master_vip is None or master_vip == slave_master:
-                    logging.warning("%s is a slave from VIP %s", slave.host, slave_master)
+                if master_vip is None:
+                    master_vip = slave_master
+                if master_vip == slave_master:
+                    if slave.hasMultiSources():
+                        logging.info("%s is a MSR slave from VIP %s", slave.host, slave_master)
+                    else:
+                        logging.info("%s is a slave from VIP %s", slave.host, slave_master)
                     slaves_with_vip.append(slave)
-                elif master_vip is not None and master_vip != slave_master:
+                else:
                     logging.warning("%s is not a slave from %s but from %s", slave.host, current_master.host, slave_master)
                     remove_list.append(slave)
-            else:
+            elif master_vip != slave_master:
                 logging.warning("%s is not a slave from %s but from %s", slave.host, current_master.host, slave_master)
                 remove_list.append(slave)
             continue
+        else:
+            logging.info("%s is a slave from %s", slave.host, slave_master)
 
         if newmaster.host == slave.host:
             logging.debug("Found myself, removing myself from the slaves list")
@@ -809,7 +871,7 @@ def do_switch(newmaster, args):
         logging.info("With those slaves: %s" % ",".join([x.host for x in slaves]))
     else:
         logging.info("Without any other slaves.")
-    logging.info("Replication GRANT (only 2 firsts) :")
+    logging.info("Replication GRANT (2 firsts only) :")
     for g in repl_grants[:2]:
         logging.info(g)
     repl_grants.append("FLUSH PRIVILEGES")
@@ -854,37 +916,27 @@ def do_switch(newmaster, args):
     position_to_catch = None
     slaves_to_wait = list(slaves) # copy
     for i in range(MAXSLAVESWAIT*5):
-        
         if current_master.isMaster():
             current_master.getMasterInfos()
             tmp_gtid = current_master.getGtidPos(gtid_domain)
             tmp_pos = current_master.getMasterPos()
 
             if gtid_position_to_catch is not None and position_to_catch != tmp_pos:
-                logging.critical("Position change on master! Something is wrong!")
                 if not DRYRUN:
+                    logging.critical("Position has changed on master! Something is wrong!")
                     pass # what to do in this case??
+                else:
+                    pass
 
             gtid_position_to_catch = tmp_gtid
             position_to_catch = tmp_pos
             logging.debug("Position to catch-up: %s:%d GTID=%s" % (position_to_catch[0], position_to_catch[1], gtid_position_to_catch))
 
         slaves_ok = []
+        master_pos = current_master.getPositionToCatch(gtid_domain)
+        newmaster.waitReplication(gtid_domain, master_pos)
         for slave in slaves_to_wait:
-            catched_up = False
-            slave.getSlaveInfos()
-            if slave.hasGtid():
-                gtid = slave.getGtidPos(gtid_domain)
-                if gtid == gtid_position_to_catch:
-                    catched_up = True
-            else:
-                binlog = slave.slave.getStatus('Master_Log_File')
-                exec_pos = slave.slave.getStatus('Exec_Master_Log_Pos')
-                if (binlog, exec_pos) == tmp_pos:
-                    catched_up = True
-                
-            if catched_up:
-                logging.info("Slave '%s' catched-up.", slave.host)
+            if slave.waitReplication(gtid_domain, master_pos):
                 slaves_ok.append(slave)
         for slave in slaves_ok:
             slaves_to_wait.remove(slave)
@@ -905,15 +957,8 @@ def do_switch(newmaster, args):
     logging.info("Phase %d : configure slaves with new master...", phase)
     for slave in slaves:
         slave.execQuery("STOP SLAVE")
-        if slave.hasGtid():
-            #slave.execQuery("SET GLOBAL gtid_domain_id=%d" % gtid_domain)
-            if slave not in slaves_with_vip:
-                slave.execQuery("CHANGE MASTER TO MASTER_HOST='%s', MASTER_USER='%s'"%(newmaster.host, master_user))
-        else:
-            if slave not in slaves_with_vip:
-                slave.execQuery("CHANGE MASTER TO MASTER_LOG_FILE='%s', MASTER_LOG_POS=%d"%(newmaster_pos[0], newmaster_pos[1]))
-            else:
-                slave.execQuery("CHANGE MASTER TO MASTER_HOST='%s', MASTER_USER='%s', MASTER_LOG_FILE='%s', MASTER_LOG_POS=%d"%(newmaster.host, master_user, newmaster_pos[0], newmaster_pos[1]))
+        # Switch back to "old" fashion replication: no VIP, no GTID
+        slave.execQuery("CHANGE MASTER TO MASTER_HOST='%s', MASTER_USER='%s', MASTER_LOG_FILE='%s', MASTER_LOG_POS=%d"%(newmaster.host, master_user, newmaster_pos[0], newmaster_pos[1]))
         slave.execQuery("START SLAVE")
     
     # check replication status
@@ -927,8 +972,11 @@ def do_switch(newmaster, args):
         elif not slave.slave.isSqlRunning():
             logging.critical("Switch of slave '%s' failed: check SQL thread", slave.host)
             logging.critical("%s: %s", slave.host, slave.slave.getStatus("Last_Error"))
+        elif DRYRUN:
+            logging.debug("DRYRUN slave '%s' has not switched", slave.host)
         else:
             logging.debug("wtf???") # TODO: handle that case...
+
 
     phase += 1
     logging.info("Phase %d : transform old master to a slave...", phase)
@@ -952,13 +1000,16 @@ def do_switch(newmaster, args):
             finally:
                 current_master.execQuery("START SLAVE")
             current_master.getSlaveInfos()
-            logging.info("Old master has now %d seconds of delay.", current_master.slave.getBehindMaster())
+            logging.info("Old master has now %d seconds of delay.", current_master.getBehindMaster())
             #current_master.execQuery("RESET MASTER") # ??? only if everything is ok ...
         logging.debug("Disable sync_binlog on old master")
         current_master.execQuery("SET GLOBAL sync_binlog=0")
 
     else:
-        logging.critical("Something is wrong with old master (%s)", current_master.host)
+        if not DRYRUN:
+            logging.critical("Something is wrong with old master (%s)", current_master.host)
+        else:
+            logging.warning("DRYRUN: not switched.")
 
 
     phase += 1
@@ -968,6 +1019,47 @@ def do_switch(newmaster, args):
     phase += 1
     logging.info("Phase %d : reset slave on new master.", phase)
     newmaster.execQuery("RESET SLAVE ALL")
+
+    phase += 1
+    logging.info("Phase %d : switching to GTID ...", phase)
+    for slave in slaves:
+        slave.execQuery("STOP SLAVE")
+        slave.execQuery("CHANGE MASTER TO master_use_gtid=current_pos")
+        slave.execQuery("START SLAVE")
+    master_pos = newmaster.getPositionToCatch(gtid_domain)
+    for slave in slaves:
+        slave.waitReplication(gtid_domain, master_pos)
+
+    if master_vip is not None:
+        logging.info("Master is going to be RESET, slaves will switch to VIP (if available)")
+        logging.info("Please check that everything is OK then :")
+        input("Press Enter to continue...")
+
+        phase += 1
+        logging.info("Phase %d : switching to VIP ...", phase)
+        for slave in slaves:
+            slave.execQuery("STOP SLAVE")
+            slave.execQuery("CHANGE MASTER TO MASTER_HOST='%s'"%master_vip)
+            slave.execQuery("START SLAVE")
+        master_pos = newmaster.getPositionToCatch(gtid_domain)
+        for slave in slaves:
+            slave.waitReplication(gtid_domain, master_pos)
+
+    phase += 1
+    logging.info("Phase %d : switching to GTID Slave_Pos...", phase)
+    for slave in slaves:
+        slave.execQuery("STOP SLAVE")
+        slave.execQuery("CHANGE MASTER TO master_use_gtid=slave_pos")
+        slave.execQuery("START SLAVE")
+    master_pos = newmaster.getPositionToCatch(gtid_domain)
+    for slave in slaves:
+        slave.waitReplication(gtid_domain, master_pos)
+
+    for slave in slaves:
+        slave.getSlaveInfos()
+        if slave.slave.isRunning():
+            logging.info("Slave '%s' status: master is %s, replication delay: %d", slave.host, slave.slave.getStatus('Master_Host'), slave.slave.getBehindMaster())
+
     logging.warning("If everything is OK, exec this query on old master %s : 'RESET MASTER'", current_master.host)
 
     for srv in slaves + [current_master, newmaster]:
@@ -1012,6 +1104,7 @@ if __name__ == '__main__':
             logging.root.setLevel(logging.DEBUG)
         elif o in ("--dry-run",):
             DRYRUN = True
+            WARNINGTIME = 3
         elif o in ("--confident",):
             DRYRUN = False
             replic_server.setConfident(True)
