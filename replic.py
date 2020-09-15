@@ -1000,7 +1000,6 @@ def do_switch(newmaster, args):
             finally:
                 current_master.execQuery("START SLAVE")
             current_master.getSlaveInfos()
-            logging.info("Old master has now %d seconds of delay.", current_master.getBehindMaster())
             #current_master.execQuery("RESET MASTER") # ??? only if everything is ok ...
         logging.debug("Disable sync_binlog on old master")
         current_master.execQuery("SET GLOBAL sync_binlog=0")
