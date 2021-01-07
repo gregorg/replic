@@ -711,6 +711,10 @@ class ReplicServer():
                         nagios_status = NAGIOSSTATUSES['UNKNOWN']
                         nagios_msg = 'DRBD secondary node'
             except IOError: pass
+        except:
+            logging.critical("Unknown error", exc_info=True)
+            nagios_status = NAGIOSSTATUSES['CRITICAL']
+            nagios_msg = 'Unknown error'
             
                 
         # output for nagios check:
