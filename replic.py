@@ -700,7 +700,7 @@ class ReplicServer():
                         nagios_msg = slave_nagios_msg
                         slave_nagios_set = True
 
-        except mdb.InterfaceError:
+        except (mdb.InterfaceError, mdb.errors.DatabaseError):
             # Check if this is a DRBD secondary node
             nagios_status = NAGIOSSTATUSES['CRITICAL']
             nagios_msg = 'Connection refused'
