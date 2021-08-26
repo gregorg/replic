@@ -301,6 +301,7 @@ class ReplicServer():
     DEFAULT_USER = 'root'
     DEFAULT_PWD = ''
     DEFAULT_TIMEOUT = 3
+    DEFAULT_SOCKETS = ('/var/run/mysqld/mysqld.sock', '/var/run/mysqld/mariadb.sock')
 
     def __init__(self, host=None):
         self.host = None
@@ -374,6 +375,12 @@ class ReplicServer():
                     self.mdb.shutdown()
                 except AttributeError: pass
                 self.mdb = None
+
+        if self.host == 'localhost':
+            for socket in self.DEFAULT_SOCKETS:
+                if os.path.exists(socket):
+                    self.socket = socket
+                    break
 
         if '/' in self.host:
             self.socket = self.host
