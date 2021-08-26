@@ -647,6 +647,7 @@ class ReplicServer():
 
             if self.isSlave():
                 nagios_msg = "REPLICA"
+                nagios_status = NAGIOSSTATUSES['OK']
                 if self.hasMultiSourceSupport():
                     self.getAllSlaves()
                     if len(self.slaves) > 1:
