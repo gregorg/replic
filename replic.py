@@ -614,7 +614,7 @@ class ReplicServer():
 # {{{
     def nagiosCheck(self, args):
         nagios_status = NAGIOSSTATUSES['UNKNOWN']
-        nagios_msg = ''
+        nagios_msg = 'Gni?'
         warning_threshold = 30
         critical_threshold = 120
         if len(args) == 1:
@@ -634,14 +634,15 @@ class ReplicServer():
                 nagios_status = NAGIOSSTATUSES['UNKNOWN']
                 nagios_msg = "standalone"
 
-            if self.isMaster():
+            elif self.isSlave():
+                nagios_status = NAGIOSSTATUSES['OK']
+                nagios_msg = "REPLICA"
+            
+            elif self.isMaster():
                 nagios_status = NAGIOSSTATUSES['OK']
                 nagios_msg = "MASTER"
-            
-            if self.isSlave():
-                if nagios_msg:
-                    nagios_msg += ", "
 
+            if self.isSlave():
                 if self.hasMultiSourceSupport():
                     self.getAllSlaves()
                 else:
@@ -654,10 +655,11 @@ class ReplicServer():
                     # both SQL and IO are running :
                     if slave.isIoRunning() and slave.isSqlRunning():
                         sbm = slave.getBehindMaster()
-                        logging.debug("Seconds_Behind_Master=%s Warning=%d Critical=%d", sbm, warning_threshold, critical_threshold)
+                        logging.debug("'%s' Seconds_Behind_Master=%s Warning=%d Critical=%d", slave.getPrettyName(), sbm, warning_threshold, critical_threshold)
                         if sbm < warning_threshold:
                             slave.removeBackupFlag()
                             slave_nagios_status = NAGIOSSTATUSES['OK']
+                            nagios_msg += ", %s=%ds" % (slave.getPrettyName(), sbm)
                         elif sbm < critical_threshold:
                             slave_nagios_status = NAGIOSSTATUSES['WARNING']
                         elif sbm >= critical_threshold:
@@ -666,9 +668,6 @@ class ReplicServer():
                                 slave_nagios_msg = 'Backup is catching-up'
                             else:
                                 slave_nagios_status = NAGIOSSTATUSES['CRITICAL']
-
-                        # default message if not overridden
-                        slave_nagios_msg += "'%s' %ds behind master" % (slave.getPrettyName(), sbm)
 
                     elif slave.isBackupRunningForTooLong():
                         slave_nagios_status = NAGIOSSTATUSES['CRITICAL']
@@ -695,7 +694,7 @@ class ReplicServer():
                         nagios_status = NAGIOSSTATUSES['CRITICAL']
                         slave_nagios_msg = "[%s] %s" % (slave.getStatus('Last_SQL_Errno'), slave.getStatus('Last_SQL_Error'))
                     
-                    if not slave_nagios_set or slave_nagios_status > nagios_status:
+                    if not slave_nagios_set and slave_nagios_status > nagios_status:
                         nagios_status = slave_nagios_status
                         nagios_msg = slave_nagios_msg
                         slave_nagios_set = True
