@@ -634,17 +634,16 @@ class ReplicServer():
                 nagios_status = NAGIOSSTATUSES['UNKNOWN']
                 nagios_msg = "standalone"
 
-            elif self.isSlave():
-                nagios_status = NAGIOSSTATUSES['OK']
-                nagios_msg = "REPLICA"
-            
             elif self.isMaster():
                 nagios_status = NAGIOSSTATUSES['OK']
                 nagios_msg = "MASTER"
 
             if self.isSlave():
+                nagios_msg = "REPLICA"
                 if self.hasMultiSourceSupport():
                     self.getAllSlaves()
+                    if len(self.slaves) > 1:
+                        nagios_msg = "MSR"
                 else:
                     self.slaves[''] = self.slave
 
