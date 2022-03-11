@@ -675,6 +675,7 @@ class ReplicServer():
                                 slave_nagios_msg = 'Backup is catching-up'
                             else:
                                 slave_nagios_status = NAGIOSSTATUSES['CRITICAL']
+                                nagios_msg += ", %s=%ds" % (slave.getPrettyName(), sbm)
 
                     elif slave.isBackupRunningForTooLong():
                         slave_nagios_status = NAGIOSSTATUSES['CRITICAL']
