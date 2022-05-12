@@ -250,7 +250,10 @@ class ReplicSlave():
 
 
     def getBackupFlag(self,):
-        return BACKUP_FLAG + '.' + self.host
+        if self.host is None:
+            return BACKUP_FLAG
+        else:
+            return BACKUP_FLAG + '.' + self.host
 
 
     def isBackupRunningForTooLong(self,):
