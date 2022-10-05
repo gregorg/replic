@@ -313,6 +313,7 @@ class ReplicServer():
         self.password = self.DEFAULT_PWD
         self.mdb = None
         self.confident = False
+        self.retry = True
 
         self.master = None
         self.slave = None
@@ -491,16 +492,17 @@ class ReplicServer():
         logging.debug("%s is a master: '%s':%d", self.host, binlogfile, binlogpos)
 
 
-    def getSlaveInfos(self, retry=True):
+    def getSlaveInfos(self):
         self.connect()
         cursor = self.query("SHOW SLAVE STATUS", self.mdb.cursor(dictionary=True))
         slave = None
         for row in cursor:
             # if not yet connected, retry in 1s :
-            if retry and row['Slave_IO_Running'] == 'No':
+            if self.retry and row['Slave_IO_Running'] == 'No':
                 cursor.close()
                 time.sleep(1)
-                return self.getSlaveInfos(retry=False)
+                self.retry = False
+                return self.getSlaveInfos()
 
             slave = ReplicSlave(self.host)
             if slave.setStatus(row):
@@ -637,6 +639,7 @@ class ReplicServer():
             logging.critical("Warning threshold is greater than critical, are you crazy??")
 
         try:
+            self.retry = False
             self.fetchInfos()
 
             # neither a master nor a slave
@@ -705,6 +708,11 @@ class ReplicServer():
                     else:
                         nagios_status = NAGIOSSTATUSES['CRITICAL']
                         slave_nagios_msg = "[%s] %s" % (slave.getStatus('Last_SQL_Errno'), slave.getStatus('Last_SQL_Error'))
+                        if self.hasMultiSourceSupport():
+                            if slave.getStatus('Last_SQL_Errno') == 0:
+                                nagios_msg += ", %s: stopped"%(slave.getPrettyName(), )
+                            else:
+                                nagios_msg += ", %s: %s"%(slave.getPrettyName(), slave.getStatus('Last_SQL_Errno'))
                     
                     if not slave_nagios_set and slave_nagios_status > nagios_status:
                         nagios_status = slave_nagios_status
