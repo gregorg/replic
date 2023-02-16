@@ -640,6 +640,7 @@ class ReplicServer():
 
         try:
             self.retry = False
+            self.setTimeout(1)
             self.fetchInfos()
 
             # neither a master nor a slave
@@ -727,7 +728,7 @@ class ReplicServer():
                 drbd = open('/proc/drbd', 'r')
                 for line in drbd:
                     if 'ro:Secondary/' in line:
-                        nagios_status = NAGIOSSTATUSES['UNKNOWN']
+                        nagios_status = NAGIOSSTATUSES['OK']
                         nagios_msg = 'DRBD secondary node'
             except IOError: pass
         except:
