@@ -150,7 +150,7 @@ class ColoredFormatter(logging.Formatter): # {{{
                 record.msg = u'%s'%termcolor.colored(record.msg, self.COLORS[record.levelname], self.COLORS_ATTRS[record.levelname])
             else:
                 record.msg = u'%s'%termcolor.colored(record.msg, self.COLORS[record.levelname])
-        if threading.currentThread().getName() == 'MainThread':
+        if threading.current_thread().name == 'MainThread':
             return self.mainthread_formatter.format(record)
         else:
             return logging.Formatter.format(self, record)
@@ -386,7 +386,7 @@ class ReplicServer():
                     self.socket = socket
                     break
 
-        if '/' in self.host:
+        if self.host is not None and '/' in self.host:
             self.socket = self.host
             self.host = None
         logging.debug("Connect to %s ..."%self.host)
