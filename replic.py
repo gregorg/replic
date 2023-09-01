@@ -5,7 +5,7 @@ import os, os.path, sys
 if __name__ == '__main__':
     binary = '/usr/bin/poetry'
     args = [binary, 'run', 'replic'] + sys.argv[1:]
-    os.chdir(os.path.abspath(os.path.basename(sys.argv[0]) + '/..'))
+    os.chdir(os.path.abspath(os.path.dirname(sys.argv[0])))
     os.execvp(binary, args)
 
 
