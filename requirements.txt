@@ -1,4 +1,0 @@
-termcolor
-psutil
-mysql-connector-python
-ConfigParser

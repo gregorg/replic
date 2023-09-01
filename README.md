@@ -6,7 +6,7 @@ MariaDB replication checks, and master-slaves switchover.
 
 You must install some pip modules:
 ```
-pip3 install --user -r requirements.txt
+poetry install
 ```
 
 # check mode
@@ -14,13 +14,13 @@ pip3 install --user -r requirements.txt
 Used for Nagios checks. It will check both master and slave statuses.
 
 ```
-replic.py --check
+poetry run replic --check
 ```
 
 You can check remotely:
 
 ```
-replic.py --host server_name --check
+poetry run replic --host server_name --check
 ```
 
 # switch mode
@@ -30,11 +30,11 @@ Used to switch from a MariaDB master to another. If old master is still reachabl
 - first it will do some sanity checks, like that the new master has binary logs activated
 - then, if old master is still alive, it will guess slaves. If not, you have to specify slaves on command line:
 ```
-replic.py --host new_master --switch slave1,slave2,slave3
+poetry run replic --host new_master --switch slave1,slave2,slave3
 ```
 - a dry-run option is available to see what the script will do
 ```
-replic.py --host new_master --switch slave1,slave2,slave3 --dry-run
+poetry run replic --host new_master --switch slave1,slave2,slave3 --dry-run
 ```
 - if everything is fine, it will proceed to the switch
 - disable writes on old master

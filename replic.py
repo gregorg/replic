@@ -1095,7 +1095,7 @@ def do_switch(newmaster, args):
 #
 # MAIN
 #
-if __name__ == '__main__':
+def main():
     exitcode = 1
     setup_logging()
     logging.root.setLevel(logging.INFO)
