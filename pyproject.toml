@@ -4,11 +4,11 @@ version = "1.0.0"
 description = ""
 authors = ["Grégory Duchatelet <skygreg@gmail.com>"]
 packages = [
-    { include = "replic.py" }
+    { include = "src/replic.py" }
 ]
 
 [tool.poetry.scripts]
-replic = "replic:main"
+replic = "src.replic:main"
 
 [tool.poetry.dependencies]
 python = "^3.11"
