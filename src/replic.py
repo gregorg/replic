@@ -152,8 +152,7 @@ class ColoredFormatter(logging.Formatter): # {{{
                 record.msg = u'%s'%termcolor.colored(record.msg, self.COLORS[record.levelname])
         if threading.current_thread().name == 'MainThread':
             return self.mainthread_formatter.format(record)
-        else:
-            return logging.Formatter.format(self, record)
+        return logging.Formatter.format(self, record)
 
 # }}}
 
@@ -217,8 +216,7 @@ class ReplicSlave():
     def getPrettyName(self):
         if self.name == '':
             return 'main'
-        else:
-            return self.name
+        return self.name
 
     
     def getShortStatus(self,):
@@ -252,8 +250,7 @@ class ReplicSlave():
     def getBackupFlag(self,):
         if self.host is None:
             return BACKUP_FLAG
-        else:
-            return BACKUP_FLAG + '.' + self.host
+        return BACKUP_FLAG + '.' + self.host
 
 
     def isBackupRunningForTooLong(self,):
@@ -273,7 +270,7 @@ class ReplicSlave():
                 logging.debug(p.name)
                 logging.debug("Touch backup flag: %s", bflag)
                 f = open(bflag, 'a')
-                try: # touch
+                try:
                     os.utime(bflag, (time.time(), time.time()))
                 finally:
                     f.close()
@@ -326,11 +323,7 @@ class ReplicServer():
         self.connect_timeout = self.DEFAULT_TIMEOUT
 
         self.parseMyCnf()
-        if host is not None:
-            self.setHost(host)
-        else:
-            self.setHost('localhost')
-
+        self.setHost(host if host is not None else 'localhost')
 
     def close(self):
         if self.mdb is not None:
